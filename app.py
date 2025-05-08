@@ -6,31 +6,33 @@ from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from database import init_db
 
-# load .env
+# Load .env
 load_dotenv()
+
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# init Mongo
+# Initialize Mongo
 mongo = init_db(app)
 db = mongo.db
 
 # Azure OpenAI settings
-AZURE_ENDPOINT      = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_KEY           = os.getenv("AZURE_OPENAI_KEY")
+AZURE_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_KEY = os.getenv("AZURE_OPENAI_KEY")
 AZURE_DEPLOYMENT_ID = os.getenv("AZURE_DEPLOYMENT_ID")
-API_VERSION         = "2025-01-01-preview"
-CHAT_URL = (
-    f"{AZURE_ENDPOINT}"  # includes full path and version query
-)
+API_VERSION = "2025-01-01-preview"
+CHAT_URL = f"{AZURE_ENDPOINT}"
 
+# Validate Azure OpenAI environment variables
 if not (AZURE_ENDPOINT and AZURE_KEY and AZURE_DEPLOYMENT_ID):
     raise RuntimeError("Missing Azure OpenAI config in .env")
 
+# Create Note API
 @app.route("/notes", methods=["POST"])
 def create_note():
     data = request.get_json() or {}
-    title   = data.get("title")
+    title = data.get("title")
     content = data.get("content")
     if not title or not content:
         return jsonify({"error": "title & content required"}), 400
@@ -38,6 +40,7 @@ def create_note():
     result = db.notes.insert_one(doc)
     return jsonify({"id": str(result.inserted_id)}), 201
 
+# List Notes API
 @app.route("/notes", methods=["GET"])
 def list_notes():
     notes = []
@@ -46,6 +49,7 @@ def list_notes():
         notes.append(n)
     return jsonify(notes), 200
 
+# Summarize Note API
 @app.route("/notes/<note_id>/summarize", methods=["POST"])
 def summarize_note(note_id):
     note = db.notes.find_one({"_id": ObjectId(note_id)})
@@ -56,7 +60,7 @@ def summarize_note(note_id):
     body = {
         "messages": [
             {"role": "system", "content": "You summarize meeting notes."},
-            {"role": "user",   "content": note['content']}  
+            {"role": "user", "content": note['content']}
         ],
         "temperature": 0.3
     }
@@ -69,6 +73,7 @@ def summarize_note(note_id):
     db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": {"summary": summary}})
     return jsonify({"summary": summary}), 200
 
-if __name__ == '__main__':
-    port = int(os.getenv("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+# Ensure Gunicorn handles app launch in production (Azure App Service)
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))  # Port is dynamically set by Azure
+    app.run(host='0.0.0.0', port=port, debug=True)  # Ensure app listens on all interfaces
