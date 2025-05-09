@@ -5,9 +5,11 @@ from flask_cors import CORS
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
 from flask_pymongo import PyMongo  # Ensure flask_pymongo is correctly initialized
+from requests.exceptions import Timeout
 
 # load .env
 load_dotenv()
+
 app = Flask(__name__)
 CORS(app)
 
@@ -62,13 +64,19 @@ def summarize_note(note_id):
     }
 
     try:
-        resp = requests.post(CHAT_URL, headers=headers, json=body)
-        resp.raise_for_status()
+        # Adding a timeout to the request to prevent long waiting times.
+        resp = requests.post(CHAT_URL, headers=headers, json=body, timeout=300)  # 5 minutes timeout
+        resp.raise_for_status()  # If the request was unsuccessful, raise an exception
+
         result = resp.json()
         summary = result['choices'][0]['message']['content'].strip()
 
         db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": {"summary": summary}})
         return jsonify({"summary": summary}), 200
+
+    except Timeout:
+        return jsonify({"error": "Request timed out. Please try again later."}), 504
+
     except requests.exceptions.RequestException as e:
         return jsonify({"error": f"Error processing OpenAI request: {str(e)}"}), 500
 
