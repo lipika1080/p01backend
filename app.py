@@ -4,13 +4,18 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
-from flask_pymongo import PyMongo  # Ensure you have imported PyMongo for MongoDB connection
+from flask_pymongo import PyMongo  # Ensure flask_pymongo is correctly initialized
 
 # load .env
 load_dotenv()
-
 app = Flask(__name__)
 CORS(app)
+
+# MongoDB connection (Ensure you're using CosmosDB Mongo URI)
+mongo_uri = os.getenv("COSMOS_MONGO_URI")
+app.config["MONGO_URI"] = mongo_uri
+mongo = PyMongo(app)
+db = mongo.db
 
 # Azure OpenAI settings
 AZURE_ENDPOINT      = os.getenv("AZURE_OPENAI_ENDPOINT")
@@ -21,12 +26,6 @@ CHAT_URL = f"{AZURE_ENDPOINT}"
 
 if not (AZURE_ENDPOINT and AZURE_KEY and AZURE_DEPLOYMENT_ID):
     raise RuntimeError("Missing Azure OpenAI config in .env")
-
-# Initialize MongoDB connection (Ensure you are using the correct Mongo URI)
-mongo_uri = os.getenv("COSMOS_MONGO_URI")  # Use your CosmosDB URI here
-app.config["MONGO_URI"] = mongo_uri
-mongo = PyMongo(app)
-db = mongo.db
 
 @app.route("/notes", methods=["POST"])
 def create_note():
@@ -62,15 +61,17 @@ def summarize_note(note_id):
         "temperature": 0.3
     }
 
-    resp = requests.post(CHAT_URL, headers=headers, json=body)
-    resp.raise_for_status()
-    result = resp.json()
-    summary = result['choices'][0]['message']['content'].strip()
+    try:
+        resp = requests.post(CHAT_URL, headers=headers, json=body)
+        resp.raise_for_status()
+        result = resp.json()
+        summary = result['choices'][0]['message']['content'].strip()
 
-    db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": {"summary": summary}})
-    return jsonify({"summary": summary}), 200
+        db.notes.update_one({"_id": ObjectId(note_id)}, {"$set": {"summary": summary}})
+        return jsonify({"summary": summary}), 200
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"Error processing OpenAI request: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    # Use Gunicorn to handle production deployment
     port = int(os.getenv("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)  # Remove gunicorn config here, Azure handles it
+    app.run(host='0.0.0.0', port=port, debug=True)
