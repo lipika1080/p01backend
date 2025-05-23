@@ -1,9 +1,11 @@
+# Updated app.py to include GET endpoint for saved summaries
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import openai
 import os
 from dotenv import load_dotenv
-from database import save_summary
+from database import save_summary, get_all_summaries
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +40,14 @@ def summarize():
         save_summary(note, summary)
 
         return jsonify({"summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/summaries', methods=['GET'])
+def summaries():
+    try:
+        summaries = get_all_summaries()
+        return jsonify(summaries)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
